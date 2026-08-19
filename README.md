@@ -1,6 +1,7 @@
 # TikTokToTranscript
 
 Build contract: [SPEC.md](./SPEC.md).
+How we work: [CONTRIBUTING.md](./CONTRIBUTING.md). `main` stays buildable and testable.
 
 Free TikTok → text. Paste a link, get the caption, on-screen text, and spoken transcript when available. Copy, translate, jump by timestamp.
 
