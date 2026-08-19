@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { after, before, describe, it } from "node:test";
 import { createClipClient } from "../src/clipClient.js";
+import { createSuccessIndex } from "../src/http/sitemap.js";
 import { buildApp } from "../src/server.js";
 import {
   CLIP_DOWN_COPY,
@@ -9,6 +10,7 @@ import {
   NOT_FOUND_COPY,
   escapeHtml,
 } from "../src/views/result.js";
+import { DMCA_EMAIL } from "../src/views/legal.js";
 import {
   CLIP_DOWN_ID,
   FLAKY_ID,
@@ -217,6 +219,127 @@ describe("result page extras", () => {
     assert.match(res.body, /clipboard/);
     assert.match(res.body, /postMessage/);
     assert.match(res.body, /\.cue/);
+  });
+});
+
+describe("SPEC 9–10 SEO, legal pages, ads.txt", () => {
+  it("GET /privacy is 200 with no-account and 14-day log copy", async () => {
+    const res = await app.inject({ method: "GET", url: "/privacy" });
+    assert.equal(res.statusCode, 200);
+    assert.match(String(res.headers["content-type"] ?? ""), /text\/html/i);
+    assert.match(res.body, /<title>Privacy \| TikTokToTranscript<\/title>/);
+    assert.match(res.body, /do not offer user accounts/i);
+    assert.match(res.body, /IP address and user-agent \(UA\) for 14 days/i);
+    assert.match(res.body, /third part/i);
+    assert.match(res.body, new RegExp(escapeRe(LEGAL_FOOTER)));
+    assert.match(
+      res.body,
+      new RegExp(
+        `<a href="${escapeRe(`${CLIP_PUBLIC}/#pricing`)}">Need a TikTok Transcript API\\?</a>`,
+      ),
+    );
+  });
+
+  it("GET /about is independent / not affiliated", async () => {
+    const res = await app.inject({ method: "GET", url: "/about" });
+    assert.equal(res.statusCode, 200);
+    assert.match(res.body, /independent/i);
+    assert.match(res.body, /not affiliated/i);
+    assert.match(res.body, new RegExp(escapeRe(LEGAL_FOOTER)));
+  });
+
+  it("GET /terms has no-bulk, rate-limit, and DMCA email", async () => {
+    const res = await app.inject({ method: "GET", url: "/terms" });
+    assert.equal(res.statusCode, 200);
+    assert.match(res.body, /bulk-scrape/i);
+    assert.match(res.body, /ClipAPI/);
+    assert.match(res.body, /rate-limit IPs/);
+    assert.match(res.body, new RegExp(escapeRe(DMCA_EMAIL)));
+    assert.match(res.body, new RegExp(`mailto:${escapeRe(DMCA_EMAIL)}`));
+    assert.match(res.body, new RegExp(escapeRe(LEGAL_FOOTER)));
+  });
+
+  it("GET /ads.txt is 200 with a publisher line", async () => {
+    const res = await app.inject({ method: "GET", url: "/ads.txt" });
+    assert.equal(res.statusCode, 200);
+    assert.match(String(res.headers["content-type"] ?? ""), /text\/plain/i);
+    assert.match(res.body, /google\.com,\s*pub-/);
+  });
+
+  it("GET /robots.txt disallows ?url= query pages", async () => {
+    const res = await app.inject({ method: "GET", url: "/robots.txt" });
+    assert.equal(res.statusCode, 200);
+    assert.match(String(res.headers["content-type"] ?? ""), /text\/plain/i);
+    assert.match(res.body, /User-agent:\s*\*/);
+    assert.match(res.body, /Disallow:\s*\/\?url=/);
+    assert.match(res.body, /sitemap\.xml/);
+  });
+
+  it("success pages enter sitemap and homepage recents; failed ids do not", async () => {
+    const ok = await app.inject({ method: "GET", url: `/t/${SUCCESS_ID}` });
+    assert.equal(ok.statusCode, 200);
+
+    const listed = await app.inject({ method: "GET", url: "/sitemap.xml" });
+    assert.equal(listed.statusCode, 200);
+    assert.match(String(listed.headers["content-type"] ?? ""), /xml/i);
+    assert.match(
+      listed.body,
+      new RegExp(
+        `<loc>${escapeRe(`${PUBLIC_ORIGIN}/t/${SUCCESS_ID}`)}</loc>`,
+      ),
+    );
+    assert.doesNotMatch(listed.body, /<loc>[^<]*\?url=/);
+    assert.doesNotMatch(listed.body, new RegExp(`/t/${NOT_FOUND_ID}`));
+
+    const home = await app.inject({ method: "GET", url: "/" });
+    assert.equal(home.statusCode, 200);
+    assert.match(home.body, new RegExp(`href="/t/${SUCCESS_ID}"`));
+  });
+
+  it("failed result pages stay out of the sitemap", async () => {
+    await app.inject({ method: "GET", url: `/t/${NO_TRANSCRIPT_ID}` });
+    await app.inject({ method: "GET", url: `/t/${CLIP_DOWN_ID}` });
+    const res = await app.inject({ method: "GET", url: "/sitemap.xml" });
+    assert.doesNotMatch(res.body, new RegExp(`/t/${NO_TRANSCRIPT_ID}`));
+    assert.doesNotMatch(res.body, new RegExp(`/t/${CLIP_DOWN_ID}`));
+  });
+
+  it("not_found drops a previously successful id from sitemap", async () => {
+    const index = createSuccessIndex();
+    const isolated = await buildApp({
+      clipClient: createClipClient({ base: fake.base, key: "ck_test" }),
+      publicOrigin: PUBLIC_ORIGIN,
+      clipPublicOrigin: CLIP_PUBLIC,
+      successIndex: index,
+    });
+    try {
+      index.remember(NOT_FOUND_ID);
+      const before = await isolated.inject({ method: "GET", url: "/sitemap.xml" });
+      assert.match(
+        before.body,
+        new RegExp(
+          `<loc>${escapeRe(`${PUBLIC_ORIGIN}/t/${NOT_FOUND_ID}`)}</loc>`,
+        ),
+      );
+
+      const missing = await isolated.inject({
+        method: "GET",
+        url: `/t/${NOT_FOUND_ID}`,
+      });
+      assert.equal(missing.statusCode, 404);
+
+      const after = await isolated.inject({ method: "GET", url: "/sitemap.xml" });
+      assert.doesNotMatch(after.body, new RegExp(`/t/${NOT_FOUND_ID}`));
+    } finally {
+      await isolated.close();
+    }
+  });
+
+  it("footer legal string is verbatim SPEC §10 on home and result", async () => {
+    const home = await app.inject({ method: "GET", url: "/" });
+    assert.match(home.body, new RegExp(escapeRe(LEGAL_FOOTER)));
+    const result = await app.inject({ method: "GET", url: `/t/${SUCCESS_ID}` });
+    assert.match(result.body, new RegExp(escapeRe(LEGAL_FOOTER)));
   });
 });
 

@@ -53,6 +53,14 @@ if [[ -f package.json ]]; then
   echo "== tsc --noEmit =="
   npx tsc --noEmit
 
+  echo "== SEO static files =="
+  for f in public/robots.txt public/ads.txt src/views/legal.ts src/http/sitemap.ts; do
+    [[ -f "$f" ]] || fail "missing $f"
+    [[ -s "$f" ]] || fail "empty $f"
+  done
+  grep -q 'Disallow: /?url=' public/robots.txt || fail "robots.txt must not index ?url= pages"
+  grep -q 'google.com' public/ads.txt || fail "ads.txt missing placeholder publisher line"
+
   echo "== homepage form and healthz =="
   # Inject only — no listen, no TikTok / Reddit / Amazon / ClipAPI network.
   node --import tsx --input-type=module <<'TS'
@@ -86,16 +94,41 @@ try {
   });
   assert.notEqual(short.statusCode, 302, "short link must not 302 to an invented id");
   assert.equal(short.headers.location, undefined);
+
+  const privacy = await app.inject({ method: "GET", url: "/privacy" });
+  assert.equal(privacy.statusCode, 200, "GET /privacy status");
+  assert.match(String(privacy.headers["content-type"] ?? ""), /text\/html/i);
+  assert.match(privacy.body, /no accounts/i);
+  assert.match(privacy.body, /14 days/i);
+
+  for (const path of ["/about", "/terms"]) {
+    const page = await app.inject({ method: "GET", url: path });
+    assert.equal(page.statusCode, 200, `GET ${path} status`);
+  }
+
+  const ads = await app.inject({ method: "GET", url: "/ads.txt" });
+  assert.equal(ads.statusCode, 200, "GET /ads.txt status");
+  assert.match(String(ads.headers["content-type"] ?? ""), /text\/plain/i);
+  assert.match(ads.body, /google\.com/);
+
+  const robotsTxt = await app.inject({ method: "GET", url: "/robots.txt" });
+  assert.equal(robotsTxt.statusCode, 200, "GET /robots.txt status");
+  assert.match(robotsTxt.body, /Disallow: \/\?url=/);
+
+  const sitemap = await app.inject({ method: "GET", url: "/sitemap.xml" });
+  assert.equal(sitemap.statusCode, 200, "GET /sitemap.xml status");
+  assert.match(String(sitemap.headers["content-type"] ?? ""), /xml/i);
+  assert.match(sitemap.body, /<urlset\b/);
 } finally {
   await app.close();
 }
 TS
 
   echo "== node:test (offline) =="
-  for f in tests/parse-url.test.ts tests/pages.test.ts tests/fake-clip.ts; do
+  for f in tests/parse-url.test.ts tests/pages.test.ts tests/fake-clip.ts tests/sitemap.test.ts; do
     [[ -f "$f" ]] || fail "missing $f"
   done
-  npx tsx --test --test-reporter=spec tests/parse-url.test.ts tests/pages.test.ts
+  npx tsx --test --test-reporter=spec tests/parse-url.test.ts tests/pages.test.ts tests/sitemap.test.ts
 fi
 
 echo "OK: buildable and testable"

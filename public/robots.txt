@@ -1,0 +1,5 @@
+# TikTokToTranscript — sitemap is GET /sitemap.xml (successful /t/:id only).
+User-agent: *
+Allow: /
+Disallow: /?url=
+Disallow: /*?url=
