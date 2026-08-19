@@ -54,11 +54,11 @@ if [[ -f package.json ]]; then
   # Inject only — no listen, no TikTok / Reddit / Amazon / ClipAPI network.
   node --import tsx --input-type=module <<'TS'
 import assert from "node:assert/strict";
-import { buildApp, HEALTHZ_PATH } from "./src/server.ts";
+import { buildApp } from "./src/server.ts";
 
 const app = await buildApp();
 try {
-  const health = await app.inject({ method: "GET", url: HEALTHZ_PATH });
+  const health = await app.inject({ method: "GET", url: "/healthz" });
   assert.equal(health.statusCode, 200, "GET /healthz status");
   assert.deepEqual(health.json(), { ok: true });
 
@@ -68,10 +68,29 @@ try {
   assert.match(home.body, /<form\b/i, "GET / must contain a form");
   assert.match(home.body, /name=["']url["']/i, "form must include url field");
   assert.match(home.body, /method=["']get["']/i, "form must GET");
+
+  const id = "1234567890123456789";
+  const redirected = await app.inject({
+    method: "GET",
+    url: `/?url=${encodeURIComponent(`https://www.tiktok.com/@user/video/${id}`)}`,
+  });
+  assert.equal(redirected.statusCode, 302, "GET /?url= known id status");
+  assert.equal(redirected.headers.location, `/t/${id}`);
+
+  const short = await app.inject({
+    method: "GET",
+    url: "/?url=" + encodeURIComponent("https://vm.tiktok.com/ZMxxxx/"),
+  });
+  assert.notEqual(short.statusCode, 302, "short link must not 302 to an invented id");
+  assert.equal(short.headers.location, undefined);
 } finally {
   await app.close();
 }
 TS
+
+  echo "== node:test (offline) =="
+  [[ -f tests/parse-url.test.ts ]] || fail "missing tests/parse-url.test.ts"
+  npx tsx --test --test-reporter=spec tests/parse-url.test.ts
 fi
 
 echo "OK: buildable and testable"
