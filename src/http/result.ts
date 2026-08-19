@@ -7,11 +7,13 @@ import {
   type ResultPage,
   type ResultViewModel,
 } from "../views/result.js";
+import type { SuccessIndex } from "./sitemap.js";
 
 export type ResultRouteDeps = {
   clipClient: ClipClient;
   publicOrigin?: string;
   clipPublicOrigin?: string;
+  successIndex?: SuccessIndex;
 };
 
 export function registerResultRoutes(
@@ -37,7 +39,13 @@ export function registerResultRoutes(
       );
     }
 
-    return sendClipResult(reply, result, deps, requestHostOrigin(request, deps));
+    return sendClipResult(
+      reply,
+      result,
+      deps,
+      requestHostOrigin(request, deps),
+      videoId,
+    );
   });
 }
 
@@ -66,8 +74,16 @@ export function sendClipResult(
   result: GetTranscriptResult,
   deps: ResultRouteDeps,
   publicOrigin: string,
+  knownVideoId?: string,
 ): FastifyReply {
   const model = viewModelFor(result);
+  if (deps.successIndex) {
+    if (model.state === "success") {
+      deps.successIndex.remember(model.page.videoId);
+    } else if (result.ok === false && result.code === "not_found" && knownVideoId) {
+      deps.successIndex.forget(knownVideoId);
+    }
+  }
   return sendResult(reply, statusFor(model.state), model, deps, publicOrigin);
 }
 

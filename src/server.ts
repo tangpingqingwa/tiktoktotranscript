@@ -4,12 +4,24 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import Fastify, { type FastifyInstance } from "fastify";
 import { createClipClient, type ClipClient } from "./clipClient.js";
 import { registerResultRoutes, resolveShortLink } from "./http/result.js";
+import {
+  HOMEPAGE_RECENT_LIMIT,
+  createSuccessIndex,
+  registerSitemapRoute,
+  type SuccessIndex,
+} from "./http/sitemap.js";
 import { parseUrl, resultPath } from "./parseUrl.js";
-import { DEFAULT_CLIPAPI_PUBLIC_ORIGIN, LEGAL_FOOTER } from "./views/result.js";
+import { DEFAULT_CLIPAPI_PUBLIC_ORIGIN } from "./views/result.js";
 import { renderHome } from "./views/home.js";
+import {
+  renderLegalFooter,
+  renderLegalPage,
+  type LegalPage,
+} from "./views/legal.js";
 
 const DEFAULT_PORT = 3000;
 export const HEALTHZ_PATH = "/healthz" as const;
+const PUBLIC_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "../public");
 
 const EMPTY_URL_COPY =
   "The url field was empty. Paste a TikTok link or a 19-digit video id.";
@@ -26,6 +38,7 @@ export type BuildAppOptions = {
   clipClient?: ClipClient;
   publicOrigin?: string;
   clipPublicOrigin?: string;
+  successIndex?: SuccessIndex;
 };
 
 export function parseListenPort(value = process.env.PORT): number {
@@ -44,28 +57,38 @@ export async function buildApp(
 ): Promise<FastifyInstance> {
   const app = Fastify({ logger: options.logger ?? false });
   const clipClient = options.clipClient ?? createClipClient();
+  const successIndex = options.successIndex ?? createSuccessIndex();
+  const clipPublicOrigin =
+    options.clipPublicOrigin ?? process.env.CLIPAPI_PUBLIC_ORIGIN;
   const resultDeps = {
     clipClient,
     publicOrigin: options.publicOrigin ?? process.env.PUBLIC_ORIGIN,
-    clipPublicOrigin:
-      options.clipPublicOrigin ?? process.env.CLIPAPI_PUBLIC_ORIGIN,
+    clipPublicOrigin,
+    successIndex,
   };
 
   app.get(HEALTHZ_PATH, async (): Promise<HealthzOk> => ({ ok: true }));
 
-  const appJsPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "../public/app.js");
-  let appJs: string | undefined;
-  app.get("/app.js", async (_request, reply) => {
-    appJs ??= await readFile(appJsPath, "utf8");
-    return reply.type("text/javascript; charset=utf-8").send(appJs);
-  });
+  registerPublicFile(app, "/app.js", "text/javascript; charset=utf-8");
+  registerPublicFile(app, "/robots.txt", "text/plain; charset=utf-8");
+  registerPublicFile(app, "/ads.txt", "text/plain; charset=utf-8");
 
   registerResultRoutes(app, resultDeps);
+  registerSitemapRoute(app, {
+    successIndex,
+    publicOrigin: resultDeps.publicOrigin,
+  });
+  registerLegalRoutes(app, resultDeps);
 
   app.get<{ Querystring: { url?: string | string[] } }>("/", async (request, reply) => {
     const rawUrl = firstQueryValue(request.query.url);
     if (rawUrl === undefined) {
-      return reply.type("text/html; charset=utf-8").send(renderHome());
+      return reply.type("text/html; charset=utf-8").send(
+        renderHome({
+          clipPublicOrigin,
+          recent: successIndex.list(HOMEPAGE_RECENT_LIMIT),
+        }),
+      );
     }
 
     const parsed = parseUrl(rawUrl);
@@ -83,19 +106,19 @@ export async function buildApp(
           .code(400)
           .header("x-robots-tag", "noindex")
           .type("text/html; charset=utf-8")
-          .send(renderUrlNotice("Paste a TikTok URL", EMPTY_URL_COPY));
+          .send(renderUrlNotice("Paste a TikTok URL", EMPTY_URL_COPY, clipPublicOrigin));
       case "unsupported":
         return reply
           .code(200)
           .header("x-robots-tag", "noindex")
           .type("text/html; charset=utf-8")
-          .send(renderUrlNotice("Not a TikTok URL", UNSUPPORTED_URL_COPY));
+          .send(renderUrlNotice("Not a TikTok URL", UNSUPPORTED_URL_COPY, clipPublicOrigin));
       case "invalid":
         return reply
           .code(400)
           .header("x-robots-tag", "noindex")
           .type("text/html; charset=utf-8")
-          .send(renderUrlNotice("Invalid URL", INVALID_URL_COPY));
+          .send(renderUrlNotice("Invalid URL", INVALID_URL_COPY, clipPublicOrigin));
     }
   });
 
@@ -117,8 +140,42 @@ function firstQueryValue(value: string | string[] | undefined): string | undefin
   return Array.isArray(value) ? value[0] : value;
 }
 
-function renderUrlNotice(title: string, message: string): string {
-  const pricing = `${DEFAULT_CLIPAPI_PUBLIC_ORIGIN}/#pricing`;
+function registerLegalRoutes(
+  app: FastifyInstance,
+  deps: { publicOrigin?: string; clipPublicOrigin?: string },
+): void {
+  for (const page of ["about", "privacy", "terms"] as const) {
+    app.get(`/${page}`, async (request, reply) => {
+      const origin = deps.publicOrigin ?? requestOrigin(request.headers);
+      return reply.type("text/html; charset=utf-8").send(
+        renderLegalPage(page satisfies LegalPage, {
+          clipPublicOrigin: deps.clipPublicOrigin,
+          publicOrigin: origin,
+        }),
+      );
+    });
+  }
+}
+
+function registerPublicFile(
+  app: FastifyInstance,
+  urlPath: string,
+  contentType: string,
+): void {
+  const filePath = path.join(PUBLIC_DIR, urlPath.slice(1));
+  let cached: string | undefined;
+  app.get(urlPath, async (_request, reply) => {
+    cached ??= await readFile(filePath, "utf8");
+    return reply.type(contentType).send(cached);
+  });
+}
+
+function renderUrlNotice(
+  title: string,
+  message: string,
+  clipPublicOrigin?: string,
+): string {
+  const clipOrigin = clipPublicOrigin ?? DEFAULT_CLIPAPI_PUBLIC_ORIGIN;
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -131,10 +188,7 @@ function renderUrlNotice(title: string, message: string): string {
   <h1>${title}</h1>
   <p>${message}</p>
   <p><a href="/">Paste another TikTok URL</a></p>
-  <footer>
-    <p><a href="${pricing}">Need a TikTok Transcript API?</a></p>
-    <p>${LEGAL_FOOTER}</p>
-  </footer>
+  ${renderLegalFooter(clipOrigin)}
 </body>
 </html>
 `;

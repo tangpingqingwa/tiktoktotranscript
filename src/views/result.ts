@@ -198,6 +198,11 @@ function renderFooter(clipOrigin: string): string {
   const href = `${clipOrigin}/#pricing`;
   return `<footer>
     <p><a href="${escapeAttr(href)}">Need a TikTok Transcript API?</a></p>
+    <nav aria-label="Legal">
+      <a href="/about">About</a>
+      <a href="/privacy">Privacy</a>
+      <a href="/terms">Terms</a>
+    </nav>
     <p>${LEGAL_FOOTER}</p>
   </footer>`;
 }
