@@ -19,6 +19,7 @@ import {
   SLIDESHOW_DESCRIPTION,
   SLIDESHOW_ID,
   SUCCESS_CUES,
+  SUCCESS_CUES_ES,
   SUCCESS_DESCRIPTION,
   SUCCESS_ID,
   SUCCESS_SHORT,
@@ -210,7 +211,7 @@ describe("result page extras", () => {
     assert.match(res.body, new RegExp(escapeRe(escapeHtml(SUCCESS_CUES[0]!.text))));
   });
 
-  it("serves public/app.js with copy and seek handlers", async () => {
+  it("serves public/app.js with copy, seek, language, and last-5 handlers", async () => {
     const res = await app.inject({ method: "GET", url: "/app.js" });
     assert.equal(res.statusCode, 200);
     assert.match(String(res.headers["content-type"] ?? ""), /javascript/);
@@ -219,6 +220,75 @@ describe("result page extras", () => {
     assert.match(res.body, /clipboard/);
     assert.match(res.body, /postMessage/);
     assert.match(res.body, /\.cue/);
+    assert.match(res.body, /localStorage/);
+    assert.match(res.body, /tiktoktotranscript:last5/);
+    assert.match(res.body, /#lang/);
+    assert.match(res.body, /Translator/);
+    assert.match(res.body, /\/t\/.*\./);
+    assert.doesNotMatch(res.body, /scrape/i);
+  });
+});
+
+describe("PR 5: /t/:id.:lang and last-5 localStorage", () => {
+  it("GET /t/:id.es asks ClipAPI for lang=es and renders that text", async () => {
+    const res = await app.inject({ method: "GET", url: `/t/${SUCCESS_ID}.es` });
+    assert.equal(res.statusCode, 200);
+    assert.equal(robots(res.headers), "");
+    assert.match(res.body, /data-lang="es"/);
+    assert.match(res.body, /id="lang"/);
+    assert.match(res.body, /<option value="es" selected>/);
+    for (const cue of SUCCESS_CUES_ES) {
+      assert.match(res.body, new RegExp(escapeRe(escapeHtml(cue.text))));
+    }
+    for (const cue of SUCCESS_CUES) {
+      assert.doesNotMatch(res.body, new RegExp(escapeRe(escapeHtml(cue.text))));
+    }
+    assert.match(
+      res.body,
+      new RegExp(
+        `<link rel="canonical" href="${escapeRe(`${PUBLIC_ORIGIN}/t/${SUCCESS_ID}`)}"`,
+      ),
+    );
+    assert.match(
+      res.body,
+      new RegExp(
+        `<link rel="alternate" hreflang="es" href="${escapeRe(`${PUBLIC_ORIGIN}/t/${SUCCESS_ID}.es`)}"`,
+      ),
+    );
+    assert.match(
+      res.body,
+      new RegExp(
+        `<link rel="alternate" hreflang="en" href="${escapeRe(`${PUBLIC_ORIGIN}/t/${SUCCESS_ID}`)}"`,
+      ),
+    );
+    assert.match(res.body, /id="last-five"/);
+    assert.match(res.body, /id="copy"/);
+  });
+
+  it("GET /t/:id.en 302s to the canonical /t/:id", async () => {
+    const res = await app.inject({ method: "GET", url: `/t/${SUCCESS_ID}.en` });
+    assert.equal(res.statusCode, 302);
+    assert.equal(res.headers.location, `/t/${SUCCESS_ID}`);
+  });
+
+  it("invalid language suffix is 400 noindex", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: `/t/${SUCCESS_ID}.not-a-lang`,
+    });
+    assert.equal(res.statusCode, 400);
+    assert.match(robots(res.headers), /noindex/i);
+    assert.match(res.body, /data-state="invalid"/);
+  });
+
+  it("language pages stay off the sitemap loc list (canonical /t/:id only)", async () => {
+    await app.inject({ method: "GET", url: `/t/${SUCCESS_ID}.es` });
+    const sitemap = await app.inject({ method: "GET", url: "/sitemap.xml" });
+    assert.match(
+      sitemap.body,
+      new RegExp(`<loc>${escapeRe(`${PUBLIC_ORIGIN}/t/${SUCCESS_ID}`)}</loc>`),
+    );
+    assert.doesNotMatch(sitemap.body, new RegExp(`/t/${SUCCESS_ID}\\.es`));
   });
 });
 

@@ -119,10 +119,27 @@ try {
   assert.equal(sitemap.statusCode, 200, "GET /sitemap.xml status");
   assert.match(String(sitemap.headers["content-type"] ?? ""), /xml/i);
   assert.match(sitemap.body, /<urlset\b/);
+
+  const appJs = await app.inject({ method: "GET", url: "/app.js" });
+  assert.equal(appJs.statusCode, 200, "GET /app.js status");
+  assert.match(appJs.body, /localStorage/);
+  assert.match(appJs.body, /tiktoktotranscript:last5/);
 } finally {
   await app.close();
 }
 TS
+
+  echo "== language switch + last-5 (offline) =="
+  [[ -f public/app.js ]] || fail "missing public/app.js"
+  grep -q 'localStorage' public/app.js || fail "app.js must persist last 5 in localStorage"
+  grep -q 'tiktoktotranscript:last5' public/app.js || fail "app.js missing last-5 storage key"
+  grep -q 'Translator' public/app.js || fail "app.js must try the browser Translator API"
+  grep -Eq '/t/.*\.' public/app.js || fail "app.js must navigate to /t/:id.:lang"
+  grep -qi scrape public/app.js && fail "app.js must not mention a scraper"
+  grep -q 'id="lang"' src/views/result.ts || fail "result view must include a language select"
+  grep -q 'hreflang' src/views/result.ts || fail "result view must emit hreflang when ≥2 langs"
+  grep -q 'id="last-five"' src/views/result.ts || fail "result view must host last-5 markup"
+  grep -q '/t/:id.:lang' src/http/result.ts || fail "missing /t/:id.:lang route"
 
   echo "== node:test (offline) =="
   for f in tests/parse-url.test.ts tests/pages.test.ts tests/fake-clip.ts tests/sitemap.test.ts; do

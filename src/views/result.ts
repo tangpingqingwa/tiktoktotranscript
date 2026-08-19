@@ -9,6 +9,23 @@ export const INVALID_ID_COPY = "Use a 19-digit TikTok video id.";
 
 export const DEFAULT_CLIPAPI_PUBLIC_ORIGIN = "https://api.clipapi.dev";
 
+export const RESULT_LANGS = [
+  { code: "en", label: "English" },
+  { code: "es", label: "Spanish" },
+  { code: "fr", label: "French" },
+  { code: "de", label: "German" },
+  { code: "pt", label: "Portuguese" },
+  { code: "ja", label: "Japanese" },
+  { code: "ko", label: "Korean" },
+  { code: "zh", label: "Chinese" },
+  { code: "id", label: "Indonesian" },
+  { code: "vi", label: "Vietnamese" },
+] as const;
+
+export function resultPathForLang(videoId: string, lang: string): string {
+  return lang === "en" ? `/t/${videoId}` : `/t/${videoId}.${lang}`;
+}
+
 export type ResultLine = {
   startMs: number;
   endMs: number | null;
@@ -48,12 +65,13 @@ const SHARED_CSS = `
     body { margin: 0 auto; max-width: 40rem; padding: 1.25rem; line-height: 1.5; }
     h1 { font-size: 1.5rem; line-height: 1.2; }
     .meta { color: CanvasText; opacity: 0.8; }
-    .copy-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 1rem 0; }
-    button { font-size: 1rem; padding: 0.6rem 0.9rem; }
+    .copy-actions, .lang-switch { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin: 1rem 0; }
+    button, select { font-size: 1rem; padding: 0.6rem 0.9rem; }
     ol.lines { padding-left: 1.25rem; }
     .cue { cursor: pointer; }
     .cue-seek { font-variant-numeric: tabular-nums; margin-right: 0.5rem; }
     .embed { margin-top: 2rem; }
+    #last-five { margin-top: 2rem; }
     footer { margin-top: 2.5rem; font-size: 0.875rem; }
 `;
 
@@ -125,6 +143,11 @@ function renderSuccess(
     })
     .join("");
   const embedCite = `https://www.tiktok.com/@${handle ?? "video"}/video/${page.videoId}`;
+  const currentLang = page.language || "en";
+  const hreflang = RESULT_LANGS.map((item) => {
+    const href = `${origin}${resultPathForLang(page.videoId, item.code)}`;
+    return `  <link rel="alternate" hreflang="${escapeAttr(item.code)}" href="${escapeAttr(href)}">`;
+  }).join("\n");
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -134,15 +157,18 @@ function renderSuccess(
   <title>${escapeHtml(titleCore)} | TikTokToTranscript</title>
   <meta name="description" content="${escapeAttr(metaDescription)}">
   <link rel="canonical" href="${escapeAttr(canonical)}">
+  <link rel="alternate" hreflang="x-default" href="${escapeAttr(canonical)}">
+${hreflang}
   <style>${SHARED_CSS}</style>
   <script src="/app.js" defer></script>
 </head>
 <body>
   <main>
-    <article class="result" data-state="success" data-kind="${escapeAttr(page.kind)}" data-video-id="${escapeAttr(page.videoId)}">
+    <article class="result" data-state="success" data-kind="${escapeAttr(page.kind)}" data-video-id="${escapeAttr(page.videoId)}" data-lang="${escapeAttr(currentLang)}">
       <h1>${escapeHtml(titleCore)}</h1>
       ${authorHtml}
       <p class="meta">${escapeHtml(kindLabel)}</p>
+      ${renderLangSwitch(page.videoId, currentLang)}
       <div class="copy-actions">
         <button type="button" id="copy">Copy text</button>
         <button type="button" id="copy-ts">Copy with timestamps</button>
@@ -155,11 +181,35 @@ function renderSuccess(
         <script async src="https://www.tiktok.com/embed.js"></script>
       </div>
     </article>
+    ${renderLastFive()}
   </main>
   ${renderFooter(clipOrigin)}
 </body>
 </html>
 `;
+}
+
+function renderLangSwitch(videoId: string, currentLang: string): string {
+  const known = new Set<string>(RESULT_LANGS.map((item) => item.code));
+  const extra =
+    currentLang !== "" && !known.has(currentLang)
+      ? `<option value="${escapeAttr(currentLang)}" selected>${escapeHtml(currentLang)}</option>`
+      : "";
+  const options = RESULT_LANGS.map((item) => {
+    const selected = item.code === currentLang ? " selected" : "";
+    return `<option value="${escapeAttr(item.code)}"${selected}>${escapeHtml(item.label)}</option>`;
+  }).join("");
+  return `<div class="lang-switch">
+        <label for="lang">Language</label>
+        <select id="lang" name="lang" data-video-id="${escapeAttr(videoId)}" data-current-lang="${escapeAttr(currentLang)}">${extra}${options}</select>
+      </div>`;
+}
+
+function renderLastFive(): string {
+  return `<section id="last-five" hidden>
+      <h2>Last on this device</h2>
+      <ol></ol>
+    </section>`;
 }
 
 function renderNotice(opts: {
