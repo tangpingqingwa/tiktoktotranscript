@@ -1,5 +1,7 @@
 # TikTokToTranscript
 
+Build contract: [SPEC.md](./SPEC.md).
+
 Free TikTok → text. Paste a link, get the caption, on-screen text, and spoken transcript when available. Copy, translate, jump by timestamp.
 
 This is the YoutubeToTranscript slot for short video: not the profit center, the traffic layer and the load that forges ClipAPI.
