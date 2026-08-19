@@ -35,6 +35,27 @@ export const SUCCESS_DESCRIPTION =
   "Lecture notes on photosynthesis and why leaves look green";
 export const SLIDESHOW_DESCRIPTION = "Recipe cards for weeknight pasta";
 
+export const SUCCESS_CUES_ES: ClipCue[] = [
+  {
+    text: "Bienvenidos a la lección de fotosíntesis de hoy.",
+    start: 0,
+    duration: 3.5,
+  },
+  {
+    text: "La clorofila absorbe luz roja y azul.",
+    start: 3.5,
+    duration: 4,
+  },
+];
+
+function transcriptForLang(lang: string): Partial<ClipTranscript> {
+  const normalized = lang.trim().toLowerCase() || "en";
+  if (normalized === "es") {
+    return { language: "es", transcript: SUCCESS_CUES_ES };
+  }
+  return { language: normalized };
+}
+
 export function successTranscript(
   videoId = SUCCESS_ID,
   overrides: Partial<ClipTranscript> = {},
@@ -94,6 +115,7 @@ export function createFakeClipServer(): http.Server {
 
     const videoId = url.searchParams.get("video_id") ?? "";
     const rawUrl = url.searchParams.get("url") ?? "";
+    const lang = url.searchParams.get("lang") ?? "en";
     const resolved = resolveFixture(videoId, rawUrl);
 
     if (resolved === "down") {
@@ -136,7 +158,7 @@ export function createFakeClipServer(): http.Server {
     }
     if (resolved === "success") {
       const id = videoId && /^\d{19}$/.test(videoId) ? videoId : SUCCESS_ID;
-      sendJson(res, 200, okBody(successTranscript(id)));
+      sendJson(res, 200, okBody(successTranscript(id, transcriptForLang(lang))));
       return;
     }
 

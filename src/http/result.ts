@@ -20,33 +20,101 @@ export function registerResultRoutes(
   app: FastifyInstance,
   deps: ResultRouteDeps,
 ): void {
-  app.get<{ Params: { id: string } }>("/t/:id", async (request, reply) => {
-    const videoId = request.params.id;
-    if (!isVideoId(videoId)) {
-      return sendResult(reply, 400, { state: "invalid" }, deps, requestHostOrigin(request, deps));
+  const handle = async (
+    request: { params: { id: string; lang?: string }; headers: Record<string, unknown> },
+    reply: FastifyReply,
+    rawId: string,
+    rawLang?: string,
+  ): Promise<FastifyReply> => {
+    const origin = requestHostOrigin(request, deps);
+    const parsed =
+      rawLang === undefined
+        ? parseResultIdParam(rawId)
+        : parseResultIdAndLang(rawId, rawLang);
+    if (!parsed.ok) {
+      return sendResult(reply, 400, { state: "invalid" }, deps, origin);
+    }
+
+    // Canonical default language lives at /t/:id (SPEC §9).
+    if (parsed.fromLangSuffix && parsed.lang === "en") {
+      return reply.redirect(`/t/${parsed.videoId}`, 302);
     }
 
     let result: GetTranscriptResult;
     try {
-      result = await deps.clipClient.getTranscript({ videoId, lang: "en" });
+      result = await deps.clipClient.getTranscript({
+        videoId: parsed.videoId,
+        lang: parsed.lang,
+      });
     } catch {
-      return sendResult(
-        reply,
-        503,
-        { state: "clip_down" },
-        deps,
-        requestHostOrigin(request, deps),
-      );
+      return sendResult(reply, 503, { state: "clip_down" }, deps, origin);
     }
 
-    return sendClipResult(
-      reply,
-      result,
-      deps,
-      requestHostOrigin(request, deps),
-      videoId,
-    );
-  });
+    return sendClipResult(reply, result, deps, origin, parsed.videoId, parsed.lang);
+  };
+
+  app.get<{ Params: { id: string; lang: string } }>(
+    "/t/:id.:lang",
+    async (request, reply) =>
+      handle(request, reply, request.params.id, request.params.lang),
+  );
+  app.get<{ Params: { id: string } }>("/t/:id", async (request, reply) =>
+    handle(request, reply, request.params.id),
+  );
+}
+
+/** SPEC: GET /t/:video_id and GET /t/:video_id.:lang (BCP 47). */
+export function parseResultIdParam(
+  raw: string,
+):
+  | { ok: true; videoId: string; lang: string; fromLangSuffix: boolean }
+  | { ok: false } {
+  const dot = raw.indexOf(".");
+  if (dot === -1) {
+    return parseResultIdAndLang(raw, "en", false);
+  }
+  return parseResultIdAndLang(raw.slice(0, dot), raw.slice(dot + 1), true);
+}
+
+export function parseResultIdAndLang(
+  videoId: string,
+  langRaw: string,
+  fromLangSuffix = true,
+):
+  | { ok: true; videoId: string; lang: string; fromLangSuffix: boolean }
+  | { ok: false } {
+  if (!isVideoId(videoId) || !isBcp47(langRaw)) {
+    return { ok: false };
+  }
+  return {
+    ok: true,
+    videoId,
+    lang: normalizeLang(langRaw),
+    fromLangSuffix,
+  };
+}
+
+export function isBcp47(value: string): boolean {
+  return (
+    value.length >= 2 &&
+    value.length <= 35 &&
+    /^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/.test(value)
+  );
+}
+
+export function normalizeLang(value: string): string {
+  return value
+    .split("-")
+    .map((part, index) => {
+      if (index === 0 || (part.length !== 2 && part.length !== 4)) {
+        return part.toLowerCase();
+      }
+      if (part.length === 2) {
+        return part.toUpperCase();
+      }
+      return `${part[0]!.toUpperCase()}${part.slice(1).toLowerCase()}`;
+    })
+    .join("-");
 }
 
 export async function resolveShortLink(
@@ -75,8 +143,9 @@ export function sendClipResult(
   deps: ResultRouteDeps,
   publicOrigin: string,
   knownVideoId?: string,
+  requestedLang = "en",
 ): FastifyReply {
-  const model = viewModelFor(result);
+  const model = viewModelFor(result, requestedLang);
   if (deps.successIndex) {
     if (model.state === "success") {
       deps.successIndex.remember(model.page.videoId);
@@ -87,9 +156,14 @@ export function sendClipResult(
   return sendResult(reply, statusFor(model.state), model, deps, publicOrigin);
 }
 
-export function viewModelFor(result: GetTranscriptResult): ResultViewModel {
+export function viewModelFor(
+  result: GetTranscriptResult,
+  requestedLang = "en",
+): ResultViewModel {
   if (result.ok) {
-    return { state: "success", page: toResultPage(result.data) };
+    const page = toResultPage(result.data);
+    page.language = requestedLang || page.language;
+    return { state: "success", page };
   }
   switch (result.code) {
     case "no_transcript":
