@@ -47,6 +47,9 @@ if [[ -f package.json ]]; then
     fi
   fi
 
+  # Never inherit a live ClipAPI target. Tests use tests/fake-clip.ts only.
+  unset CLIPAPI_BASE CLIPAPI_KEY CLIPAPI_PUBLIC_ORIGIN
+
   echo "== tsc --noEmit =="
   npx tsc --noEmit
 
@@ -89,8 +92,10 @@ try {
 TS
 
   echo "== node:test (offline) =="
-  [[ -f tests/parse-url.test.ts ]] || fail "missing tests/parse-url.test.ts"
-  npx tsx --test --test-reporter=spec tests/parse-url.test.ts
+  for f in tests/parse-url.test.ts tests/pages.test.ts tests/fake-clip.ts; do
+    [[ -f "$f" ]] || fail "missing $f"
+  done
+  npx tsx --test --test-reporter=spec tests/parse-url.test.ts tests/pages.test.ts
 fi
 
 echo "OK: buildable and testable"

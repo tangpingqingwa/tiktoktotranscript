@@ -1,5 +1,4 @@
-const LEGAL_FOOTER =
-  "TikTokToTranscript is an independent service and is not affiliated with, endorsed by, or sponsored by TikTok or ByteDance. “TikTok” is a trademark of its owner. We only fetch the public caption of the video you ask for. We do not host video files.";
+import { LEGAL_FOOTER } from "./result.js";
 
 export function renderHome(): string {
   return `<!DOCTYPE html>
