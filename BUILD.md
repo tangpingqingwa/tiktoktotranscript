@@ -171,3 +171,12 @@ Do not add a scraper package in any PR.
 ## 10. Cutover
 
 Point `CLIPAPI_BASE` at real ClipAPI only after ClipAPI BUILD PR 5 is on its `main` and a smoke video works from staging.
+
+One-box host: [deploy/runbook.md](./deploy/runbook.md). Image is `Dockerfile` (Node 22, `USER node`, `$PORT`). Do not bake `CLIPAPI_BASE` / `CLIPAPI_KEY`. If ClipAPI is down, the page errors. Do not add a scraper.
+
+### PR 6: Dockerfile + CLIPAPI_BASE runbook
+
+- **Description:** one-VPS image and operator cutover. No scraper. CI stays on fixture ClipAPI.
+- **Files:** `Dockerfile`, `.dockerignore`, `.env.example`, `deploy/runbook.md`, `scripts/test.sh`
+- **Dependencies:** PR 5 (app on `main`)
+- **Acceptance:** `bash scripts/test.sh` green offline; Dockerfile does not set `CLIPAPI_BASE`.
