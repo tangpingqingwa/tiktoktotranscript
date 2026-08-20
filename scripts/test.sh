@@ -37,6 +37,47 @@ echo "== markdown is UTF-8 text =="
 file -b --mime-encoding README.md SPEC.md CONTRIBUTING.md | grep -qiE 'utf-8|us-ascii' \
   || fail "docs are not UTF-8/ASCII"
 
+echo "== deploy artifacts (Dockerfile + CLIPAPI_BASE cutover) =="
+[[ -f Dockerfile ]] || fail "missing Dockerfile"
+[[ -f .env.example ]] || fail "missing .env.example"
+[[ -f deploy/runbook.md ]] || fail "missing deploy/runbook.md"
+grep -q 'node:22' Dockerfile || fail "Dockerfile must use Node 22"
+grep -qE '^USER[[:space:]]+node$' Dockerfile || fail "Dockerfile must run as non-root USER node"
+grep -q 'PORT' Dockerfile || fail "Dockerfile must honor PORT"
+grep -q 'src/server.ts' Dockerfile || fail "Dockerfile must start src/server.ts"
+if grep -E 'CLIPAPI_BASE[[:space:]]*=' Dockerfile >/dev/null; then
+  fail "Dockerfile must not bake CLIPAPI_BASE (cutover is operator env)"
+fi
+if grep -E 'CLIPAPI_KEY[[:space:]]*=' Dockerfile >/dev/null; then
+  fail "Dockerfile must not bake CLIPAPI_KEY"
+fi
+if [[ -f docker-compose.yml ]]; then
+  fail "one-box deploy is Dockerfile only; do not add docker-compose"
+fi
+grep -q 'CLIPAPI_BASE' .env.example || fail ".env.example missing CLIPAPI_BASE"
+grep -q 'CLIPAPI_KEY' .env.example || fail ".env.example missing CLIPAPI_KEY"
+if grep -E '^[[:space:]]*CLIPAPI_BASE=' .env.example >/dev/null; then
+  fail ".env.example must not default CLIPAPI_BASE on (leave commented until cutover)"
+fi
+if grep -E '^[[:space:]]*CLIPAPI_KEY=' .env.example >/dev/null; then
+  fail ".env.example must not ship a CLIPAPI_KEY value"
+fi
+if grep -E 'ck_(live|test)_' .env.example >/dev/null; then
+  fail ".env.example must not ship a real ClipAPI key"
+fi
+grep -q '/healthz' deploy/runbook.md || fail "runbook missing /healthz"
+grep -q 'CLIPAPI_BASE' deploy/runbook.md || fail "runbook missing CLIPAPI_BASE cutover"
+grep -q 'docker build' deploy/runbook.md || fail "runbook missing docker build"
+grep -q 'docker run' deploy/runbook.md || fail "runbook missing docker run"
+grep -q 'no scraper' deploy/runbook.md || fail "runbook must state there is no scraper"
+if grep -qiE 'puppeteer|playwright|yt-dlp|tiktok-scraper|scrapy' \
+  Dockerfile .env.example deploy/runbook.md; then
+  fail "deploy artifacts must not mention a scraper"
+fi
+if [[ -f .github/workflows/ci.yml ]] && grep -E 'CLIPAPI_BASE' .github/workflows/ci.yml >/dev/null; then
+  fail "CI must not set CLIPAPI_BASE; tests use tests/fake-clip.ts only"
+fi
+
 if [[ -f package.json ]]; then
   echo "== install =="
   if [[ ! -d node_modules ]]; then
