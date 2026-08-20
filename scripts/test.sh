@@ -111,14 +111,20 @@ grep -q 'feat/live-smoke-captioned' docs/live-smoke.md \
 if ! grep -Eq 'PASS-ERROR|BLOCKED-SECRET|\*\*PASS\*\*' docs/live-smoke.md; then
   fail "docs/live-smoke.md must record this session's live verdict"
 fi
-# Honest bar until ClipAPI returns live cues: paste 302 + result no_transcript.
-# Do not treat a fake success page (or leftover BLOCKED-SECRET-only table) as 100%.
-grep -q '6718335390845095173' docs/live-smoke.md \
-  || fail "docs/live-smoke.md must record the real paste video id"
-grep -q 'no_transcript' docs/live-smoke.md \
-  || fail "docs/live-smoke.md must record no_transcript until ClipAPI captioned PASS"
-grep -Fq '0 `.cue`' docs/live-smoke.md \
-  || fail "docs/live-smoke.md must record 0 .cue (no invented lines)"
+# Captioned ClipAPI PASS: paste 302 to the live video id + ≥1 real .cue on /t/:id.
+# Do not treat leftover no_transcript-only tables as 100% after ClipAPI captioned PASS.
+grep -q '6989607394561035525' docs/live-smoke.md \
+  || fail "docs/live-smoke.md must record the captioned rosssmith video id"
+grep -q 'rosssmith' docs/live-smoke.md \
+  || fail "docs/live-smoke.md must record the rosssmith paste URL"
+grep -q 'data-state="success"' docs/live-smoke.md \
+  || fail "docs/live-smoke.md must record success result HTML"
+grep -q 'cues=6' docs/live-smoke.md \
+  || fail "docs/live-smoke.md must record live cue count from ClipAPI"
+grep -q 'what the heck' docs/live-smoke.md \
+  || fail "docs/live-smoke.md must record live cue text (not invented)"
+grep -q 'http://127.0.0.1:3041' docs/live-smoke.md \
+  || fail "docs/live-smoke.md must record the local ClipAPI origin"
 if grep -qiE 'puppeteer|playwright|yt-dlp|tiktok-scraper|scrapy' scripts/live-smoke.sh docs/live-smoke.md; then
   fail "live-smoke must not add a scraper"
 fi
