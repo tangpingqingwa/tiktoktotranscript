@@ -82,6 +82,9 @@ fi
 if grep -RInE 'live-smoke' .github >/dev/null 2>&1; then
   fail "CI must not run scripts/live-smoke.sh"
 fi
+# A leading `bash scripts/live-smoke.sh` would hit live ClipAPI. The later
+# BLOCKED-SECRET subprocess (`blocked_out="$(bash scripts/live-smoke.sh …)"`)
+# is allowed: secrets unset, exits 2, no network.
 if awk '
   /^[[:space:]]*(bash[[:space:]]+)?(\.\/)?scripts\/live-smoke\.sh([[:space:]]|$)/ { found=1 }
   END { exit found ? 0 : 1 }
@@ -102,13 +105,45 @@ grep -q 'CI' scripts/live-smoke.sh || fail "live-smoke must refuse CI"
 grep -q 'LIVE_SMOKE_BASE_URL:-' scripts/live-smoke.sh \
   || fail "live-smoke must default LIVE_SMOKE_BASE_URL under set -u"
 grep -q 'This session' docs/live-smoke.md || fail "docs/live-smoke.md must record this session"
+grep -q 'feat/live-smoke-captioned' docs/live-smoke.md \
+  || fail "docs/live-smoke.md must record the feat/live-smoke-captioned session"
 # Session table must be a real run (PASS / PASS-ERROR / BLOCKED-SECRET), not a template.
 if ! grep -Eq 'PASS-ERROR|BLOCKED-SECRET|\*\*PASS\*\*' docs/live-smoke.md; then
   fail "docs/live-smoke.md must record this session's live verdict"
 fi
+# Honest bar until ClipAPI returns live cues: paste 302 + result no_transcript.
+# Do not treat a fake success page (or leftover BLOCKED-SECRET-only table) as 100%.
+grep -q '6718335390845095173' docs/live-smoke.md \
+  || fail "docs/live-smoke.md must record the real paste video id"
+grep -q 'no_transcript' docs/live-smoke.md \
+  || fail "docs/live-smoke.md must record no_transcript until ClipAPI captioned PASS"
+grep -Fq '0 `.cue`' docs/live-smoke.md \
+  || fail "docs/live-smoke.md must record 0 .cue (no invented lines)"
 if grep -qiE 'puppeteer|playwright|yt-dlp|tiktok-scraper|scrapy' scripts/live-smoke.sh docs/live-smoke.md; then
   fail "live-smoke must not add a scraper"
 fi
+# Offline BLOCKED-SECRET: no CLIPAPI_BASE / CLIPAPI_KEY, no network.
+(
+  unset CLIPAPI_BASE CLIPAPI_KEY LIVE_SMOKE_BASE_URL LIVE_SMOKE_TIKTOK_URL CI GITHUB_ACTIONS
+  set +e
+  blocked_out="$(bash scripts/live-smoke.sh 2>&1)"
+  blocked_ec=$?
+  set -e
+  [[ "$blocked_ec" -eq 2 ]] || fail "live-smoke without secrets must exit 2, got ${blocked_ec}"
+  printf '%s\n' "$blocked_out" | grep -q 'BLOCKED-SECRET' \
+    || fail "live-smoke without secrets must print BLOCKED-SECRET"
+  printf '%s\n' "$blocked_out" | grep -q 'CLIPAPI_BASE' \
+    || fail "BLOCKED-SECRET must name CLIPAPI_BASE"
+  printf '%s\n' "$blocked_out" | grep -q 'CLIPAPI_KEY' \
+    || fail "BLOCKED-SECRET must name CLIPAPI_KEY"
+)
+# Result-page scoring must reject fixture cue leakage (live ClipAPI not on).
+grep -q 'Welcome to today' scripts/live-smoke.sh \
+  || fail "live-smoke must fail fixture cue strings from tests/fake-clip.ts"
+grep -q 'Boil water and salt it well' scripts/live-smoke.sh \
+  || fail "live-smoke must fail slideshow fixture cue strings"
+grep -q 'PASS-ERROR' scripts/live-smoke.sh \
+  || fail "live-smoke must allow honest PASS-ERROR for no_transcript"
 
 if [[ -f package.json ]]; then
   echo "== install =="

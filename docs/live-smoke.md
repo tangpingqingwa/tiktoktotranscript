@@ -53,9 +53,9 @@ Fixture cue strings from `tests/fake-clip.ts` (`Welcome to today's lecture…`, 
 
 ## This session
 
-Ran `bash scripts/live-smoke.sh` on 2026-08-20 from `feat/live-smoke-clipapi` against a **local live ClipAPI** (`CLIPAPI_LIVE=1`, `CLIPAPI_FIXTURE_ONLY` unset) on `http://127.0.0.1:3041`. This site started `node --import tsx src/server.ts` on loopback and pasted a real TikTok URL. No fixture cue text. No scraper.
+Re-ran `bash scripts/live-smoke.sh` on 2026-08-20 from `feat/live-smoke-captioned` against a **local live ClipAPI** (`CLIPAPI_LIVE=1`, `CLIPAPI_FIXTURE_ONLY` unset) on `http://127.0.0.1:3041`. This site started `node --import tsx src/server.ts` on loopback (`CLIPAPI_BASE` + `CLIPAPI_KEY` set) and pasted a real TikTok URL. No fixture cue text. No scraper.
 
-ClipAPI itself still has no captioned-transcript PASS (live SSR returns empty `captionInfos` / `subtitleInfos` → `no_transcript`). This paste soak therefore cannot be 100% until ClipAPI returns ≥1 live cue.
+ClipAPI still has **no captioned-transcript PASS** from this egress (live SSR returns empty `captionInfos` / `subtitleInfos` → `no_transcript`). `GET /t/:id` is therefore still `no_transcript`. This unit is **not 100%** until ClipAPI returns ≥1 live cue and this page shows that text.
 
 | Flow | Result | Proof |
 |---|---|---|
@@ -64,7 +64,20 @@ ClipAPI itself still has no captioned-transcript PASS (live SSR returns empty `c
 
 Script printed `paste=PASS result=PASS-ERROR verdict=PASS` and exited 0.
 
-Same ClipAPI box, same key, five public `@video` URLs all returned ClipAPI `422 no_transcript` (creditsCharged=0). No captioned 200. Do not invent cues to force PASS.
+Same ClipAPI box, same dedicated `ck_live_…` key (not committed):
+
+| ClipAPI `GET /v1/transcript` | HTTP | code |
+|---|---|---|
+| `https://www.tiktok.com/@scout2015/video/6718335390845095173` | 422 | `no_transcript` (`req_10cec78a-e2c7-41d0-8598-5aba50b207d4`) |
+| `https://www.tiktok.com/@rosssmith/video/7011618699945856262` | 422 | `no_transcript` (`req_9694635e-3bd6-4238-96af-876e4d98f79e`) |
+| `https://www.tiktok.com/@dearmebeauty/video/6893431881816149250` | 422 | `no_transcript` (`req_92d0e70f-e14d-4cd1-8d1a-557c9c88335e`) |
+| `https://www.tiktok.com/@tiktok_australia/video/6927466633946598658` | 422 | `no_transcript` (`req_b918c2d4-3524-41d2-bda2-1eeb27974e70`) |
+| `https://www.tiktok.com/@nasa/video/7123456789012345678` | 404 | `not_found` |
+| `https://www.tiktok.com/@khaby.lame/video/7132125479092292870` | 404 | `not_found` |
+
+No captioned 200. Do not invent cues to force PASS.
+
+Missing-secret path (this session, no live ClipAPI required): unset `CLIPAPI_BASE` + `CLIPAPI_KEY` → `BLOCKED-SECRET: CLIPAPI_BASE CLIPAPI_KEY are unset or empty.` exit 2. Unset `CLIPAPI_KEY` only → `BLOCKED-SECRET: CLIPAPI_KEY`. Unset `CLIPAPI_BASE` only → `BLOCKED-SECRET: CLIPAPI_BASE`. `CI=true` → exit 1, does not paste.
 
 `bash scripts/test.sh` stays the offline gate and must stay green without `CLIPAPI_BASE` / `CLIPAPI_KEY`. ClipAPI’s own live smoke must PASS a captioned transcript before this unit can be 100%.
 
