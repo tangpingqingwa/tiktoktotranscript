@@ -83,6 +83,7 @@ command -v node >/dev/null || fail "node is required"
 
 TIKTOK_URL="${LIVE_SMOKE_TIKTOK_URL:-https://www.tiktok.com/@scout2015/video/6718335390845095173}"
 BASE_URL="${LIVE_SMOKE_BASE_URL:-}"
+LIVE_SMOKE_BASE_URL="${LIVE_SMOKE_BASE_URL:-}"
 started_server=0
 pid=""
 log=""
@@ -136,7 +137,7 @@ export NODE_ENV="${NODE_ENV:-development}"
 echo "== live-smoke (CLIPAPI_BASE paste) =="
 echo "clipapi_base=${CLIPAPI_BASE} port=${PORT} url=${TIKTOK_URL}"
 
-if [[ -z "$LIVE_SMOKE_BASE_URL" ]]; then
+if [[ -z "${LIVE_SMOKE_BASE_URL:-}" ]]; then
   log="$workdir/server.log"
   echo "== start local process CLIPAPI_BASE set port=${PORT} =="
   node --import tsx src/server.ts >"$log" 2>&1 &

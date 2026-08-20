@@ -53,16 +53,20 @@ Fixture cue strings from `tests/fake-clip.ts` (`Welcome to today's lecture…`, 
 
 ## This session
 
-Ran `bash scripts/live-smoke.sh` on 2026-08-20 from `feat/live-smoke`. `CLIPAPI_BASE` and `CLIPAPI_KEY` were unset in the implementer environment. Required live flows were not run. No key was invented. No transcript was invented.
+Ran `bash scripts/live-smoke.sh` on 2026-08-20 from `feat/live-smoke-clipapi` against a **local live ClipAPI** (`CLIPAPI_LIVE=1`, `CLIPAPI_FIXTURE_ONLY` unset) on `http://127.0.0.1:3041`. This site started `node --import tsx src/server.ts` on loopback and pasted a real TikTok URL. No fixture cue text. No scraper.
 
-| Flow | Result |
-|---|---|
-| `GET /?url=` real TikTok URL → `/t/:id` | BLOCKED-SECRET |
-| `GET /t/:id` result page with live cue text | BLOCKED-SECRET |
+ClipAPI itself still has no captioned-transcript PASS (live SSR returns empty `captionInfos` / `subtitleInfos` → `no_transcript`). This paste soak therefore cannot be 100% until ClipAPI returns ≥1 live cue.
 
-Script printed `BLOCKED-SECRET: CLIPAPI_BASE CLIPAPI_KEY are unset or empty.` and exited 2.
+| Flow | Result | Proof |
+|---|---|---|
+| `GET /?url=` real TikTok URL → `/t/:id` | **PASS** | HTTP 302 `Location=/t/6718335390845095173` for `https://www.tiktok.com/@scout2015/video/6718335390845095173` |
+| `GET /t/:id` result page with live cue text | **PASS-ERROR** | HTTP 200 `data-state="no_transcript"`; 0 `.cue`; no invented lines |
 
-`bash scripts/test.sh` stays the offline gate and must stay green without these secrets. ClipAPI’s own live smoke must already PASS before this unit can be 100%.
+Script printed `paste=PASS result=PASS-ERROR verdict=PASS` and exited 0.
+
+Same ClipAPI box, same key, five public `@video` URLs all returned ClipAPI `422 no_transcript` (creditsCharged=0). No captioned 200. Do not invent cues to force PASS.
+
+`bash scripts/test.sh` stays the offline gate and must stay green without `CLIPAPI_BASE` / `CLIPAPI_KEY`. ClipAPI’s own live smoke must PASS a captioned transcript before this unit can be 100%.
 
 ## What this does not do
 

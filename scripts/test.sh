@@ -98,6 +98,14 @@ grep -q 'CLIPAPI_BASE' scripts/live-smoke.sh || fail "live-smoke must require CL
 grep -q 'CLIPAPI_KEY' scripts/live-smoke.sh || fail "live-smoke must require CLIPAPI_KEY"
 grep -q '/?url=' scripts/live-smoke.sh || fail "live-smoke must paste GET /?url="
 grep -q 'CI' scripts/live-smoke.sh || fail "live-smoke must refuse CI"
+# Attach URL is optional; an unbound LIVE_SMOKE_BASE_URL under set -u aborts before paste.
+grep -q 'LIVE_SMOKE_BASE_URL:-' scripts/live-smoke.sh \
+  || fail "live-smoke must default LIVE_SMOKE_BASE_URL under set -u"
+grep -q 'This session' docs/live-smoke.md || fail "docs/live-smoke.md must record this session"
+# Session table must be a real run (PASS / PASS-ERROR / BLOCKED-SECRET), not a template.
+if ! grep -Eq 'PASS-ERROR|BLOCKED-SECRET|\*\*PASS\*\*' docs/live-smoke.md; then
+  fail "docs/live-smoke.md must record this session's live verdict"
+fi
 if grep -qiE 'puppeteer|playwright|yt-dlp|tiktok-scraper|scrapy' scripts/live-smoke.sh docs/live-smoke.md; then
   fail "live-smoke must not add a scraper"
 fi
