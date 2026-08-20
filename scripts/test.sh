@@ -2,6 +2,8 @@
 # Offline gate for main. Must exit 0 on a clean clone with no secrets.
 # When application code lands, add unit/contract tests here. Do not delete the
 # contract checks. Do not require live third-party networks.
+# Live ClipAPI paste smoke is env-gated (CLIPAPI_BASE + CLIPAPI_KEY) and must
+# not run here. scripts/live-smoke.sh is operator-only.
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
@@ -77,6 +79,28 @@ fi
 if [[ -f .github/workflows/ci.yml ]] && grep -E 'CLIPAPI_BASE' .github/workflows/ci.yml >/dev/null; then
   fail "CI must not set CLIPAPI_BASE; tests use tests/fake-clip.ts only"
 fi
+if grep -RInE 'live-smoke' .github >/dev/null 2>&1; then
+  fail "CI must not run scripts/live-smoke.sh"
+fi
+if awk '
+  /^[[:space:]]*(bash[[:space:]]+)?(\.\/)?scripts\/live-smoke\.sh([[:space:]]|$)/ { found=1 }
+  END { exit found ? 0 : 1 }
+' scripts/test.sh; then
+  fail "scripts/test.sh must not invoke scripts/live-smoke.sh"
+fi
+
+echo "== live-smoke stays operator-only =="
+[[ -f scripts/live-smoke.sh ]] || fail "missing scripts/live-smoke.sh"
+[[ -x scripts/live-smoke.sh ]] || fail "scripts/live-smoke.sh must be executable"
+[[ -f docs/live-smoke.md ]] || fail "missing docs/live-smoke.md"
+grep -q 'BLOCKED-SECRET' scripts/live-smoke.sh || fail "live-smoke must print BLOCKED-SECRET when secrets are missing"
+grep -q 'CLIPAPI_BASE' scripts/live-smoke.sh || fail "live-smoke must require CLIPAPI_BASE"
+grep -q 'CLIPAPI_KEY' scripts/live-smoke.sh || fail "live-smoke must require CLIPAPI_KEY"
+grep -q '/?url=' scripts/live-smoke.sh || fail "live-smoke must paste GET /?url="
+grep -q 'CI' scripts/live-smoke.sh || fail "live-smoke must refuse CI"
+if grep -qiE 'puppeteer|playwright|yt-dlp|tiktok-scraper|scrapy' scripts/live-smoke.sh docs/live-smoke.md; then
+  fail "live-smoke must not add a scraper"
+fi
 
 if [[ -f package.json ]]; then
   echo "== install =="
@@ -89,7 +113,8 @@ if [[ -f package.json ]]; then
   fi
 
   # Never inherit a live ClipAPI target. Tests use tests/fake-clip.ts only.
-  unset CLIPAPI_BASE CLIPAPI_KEY CLIPAPI_PUBLIC_ORIGIN
+  # Live adapters stay env-gated and must not run in this script.
+  unset CLIPAPI_BASE CLIPAPI_KEY CLIPAPI_PUBLIC_ORIGIN LIVE_SMOKE_BASE_URL LIVE_SMOKE_TIKTOK_URL
 
   echo "== tsc --noEmit =="
   npx tsc --noEmit
