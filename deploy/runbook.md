@@ -60,7 +60,7 @@ curl -fsS "http://127.0.0.1:${PORT:-3000}/" | grep -F '<form'
 
    Expect `data.transcript` with ≥1 cue. Empty cues / `no_transcript` / `not_found` are valid ClipAPI answers, not a reason to scrape.
 3. Set `CLIPAPI_BASE` to that origin and `CLIPAPI_KEY` to this site’s dedicated key.
-4. Recreate the container. Submit the same URL on `/`. Expect `302` to `/t/:id` and indexable cue text.
+4. Recreate the container. Submit the same URL on `/`. Expect `302` to `/t/:id` and indexable cue text. Optional soak: `bash scripts/live-smoke.sh` (record in [docs/live-smoke.md](../docs/live-smoke.md)). Missing `CLIPAPI_BASE` / `CLIPAPI_KEY` is `BLOCKED-SECRET`. Not part of CI.
 5. If ClipAPI is unreachable, 502, or 503: the page is `clip_down` (friendly retry, noindex, no stack dump). Do **not** add a scraper. Do **not** invent lines.
 
 Same-box layout (optional): run ClipAPI on another container and set `CLIPAPI_BASE=http://<clipapi-container>:3000`. Still send `Authorization: Bearer`.
